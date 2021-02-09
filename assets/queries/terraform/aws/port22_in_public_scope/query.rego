@@ -14,13 +14,19 @@ isPrivate(cidr) = allow {
 	count({x | cidr[x]; cidr[x] == privateIPs[j]}) == cidrLength
 
 	allow = true
+} else = blocksInVars(cidr)
+
+blocksInVars(cidr) { # check if all CIDR blocks are stored in variables, which cannot be evaluated in the static scanning
+    len := count(cidr)
+    count({b | cidr[b]; contains(cidr[b],"$")}) == len
 }
 
 CxPolicy[result] {
-	resource := input.document[i].resource.aws_security_group[name].ingress
-	currentFromPort := resource.from_port
-	currentToPort := resource.to_port
-	cidr := resource.cidr_blocks
+	resource := input.document[i].resource.aws_security_group[name]
+	ingress := getIngressList(resource.ingress)
+	currentFromPort := ingress[j].from_port
+	currentToPort := ingress[j].to_port
+	cidr := ingress[j].cidr_blocks
 
 	isSSH(currentFromPort, currentToPort)
 
@@ -28,9 +34,17 @@ CxPolicy[result] {
 
 	result := {
 		"documentId": input.document[i].id,
-		"searchKey": sprintf("aws_security_group[%s].ingress.cidr", [name]),
+		"searchKey": sprintf("aws_security_group[%s].ingress.cidr_blocks", [name]),
 		"issueType": "IncorrectValue",
 		"keyExpectedValue": sprintf("aws_security_group[%s] SSH' (Port:22) is not public", [name]),
 		"keyActualValue": sprintf("aws_security_group[%s] SSH' (Port:22) is public", [name]),
 	}
 }
+
+getIngressList(ingress) = list {
+    is_array(ingress)
+    list := ingress
+} else = list {
+    is_object(ingress)
+    list := [ingress]
+} else = null
